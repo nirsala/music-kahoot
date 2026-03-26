@@ -176,9 +176,14 @@ function generateGameCode() {
 
 app.get('/api/qr/:gameCode', async (req, res) => {
   const { gameCode } = req.params
-  const clientPort = process.env.CLIENT_PORT || 5176
-  const localIP = getLocalIP()
-  const joinUrl = `http://${localIP}:${clientPort}/play/${gameCode}`
+  let joinUrl
+  if (process.env.NODE_ENV === 'production' && process.env.RENDER_EXTERNAL_URL) {
+    joinUrl = `${process.env.RENDER_EXTERNAL_URL}/play/${gameCode}`
+  } else {
+    const clientPort = process.env.CLIENT_PORT || 5176
+    const localIP = getLocalIP()
+    joinUrl = `http://${localIP}:${clientPort}/play/${gameCode}`
+  }
   try {
     const qrDataUrl = await QRCode.toDataURL(joinUrl, {
       width: 300,

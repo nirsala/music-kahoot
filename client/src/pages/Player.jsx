@@ -22,7 +22,6 @@ export default function Player() {
   const [timer, setTimer] = useState(30)
   const [myScore, setMyScore] = useState(0)
   const timerRef = useRef(null)
-  const audioRef = useRef(null)
   const myNickname = useRef('')
 
   useEffect(() => {
@@ -48,13 +47,6 @@ export default function Player() {
       setTimer(data.timeLimit)
       setPhase('playing')
 
-      // Play audio
-      if (audioRef.current) {
-        audioRef.current.src = data.audioUrl
-        audioRef.current.currentTime = 0
-        audioRef.current.play().catch(() => {})
-      }
-
       clearInterval(timerRef.current)
       let t = data.timeLimit
       timerRef.current = setInterval(() => {
@@ -72,10 +64,6 @@ export default function Player() {
 
     socket.on('roundEnded', (data) => {
       clearInterval(timerRef.current)
-      if (audioRef.current) {
-        audioRef.current.pause()
-        audioRef.current.currentTime = 0
-      }
       setRoundEndData(data)
       setPhase('roundEnd')
     })
@@ -196,7 +184,6 @@ export default function Player() {
   if (phase === 'lobby') {
     return (
       <div className="screen">
-        <audio ref={audioRef} />
         <div style={{ fontSize: '3rem', textAlign: 'center' }}>✅</div>
         <h2>הצטרפת!</h2>
         <div className="card" style={{ textAlign: 'center' }}>
@@ -224,7 +211,6 @@ export default function Player() {
   if (phase === 'playing' && roundData) {
     return (
       <div className="play-screen">
-        <audio ref={audioRef} />
 
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div className="song-info" style={{ flex: 1 }}>
@@ -275,7 +261,6 @@ export default function Player() {
   if (phase === 'answered' && answerResult) {
     return (
       <div className="screen">
-        <audio ref={audioRef} />
         <div className="answered-waiting">
           <div className="answered-icon">
             {answerResult.isCorrect ? '✅' : '❌'}
@@ -299,7 +284,6 @@ export default function Player() {
   if (phase === 'roundEnd' && roundEndData) {
     return (
       <div className="screen">
-        <audio ref={audioRef} />
         <div style={{
           background: '#27ae60',
           borderRadius: 16,

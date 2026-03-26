@@ -87,15 +87,56 @@ export default function Host() {
 
   const timerRef = useRef(null)
   const audioRef = useRef(null)
-  const previewTimerRef = useRef(null)
-  const hintTimerRef = useRef(null)
-  // Refs so socket handlers always see latest values
+  const hintTimeoutsRef = useRef([])
+  const roundActiveRef = useRef(false)
   const audioStateRef = useRef('idle')
   const answeredRef = useRef(0)
+  const totalPlayersRef = useRef(0)
+  const [currentHint, setCurrentHint] = useState(0)
+
+  // hint schedule: { play ms, wait ms after }
+  const HINT_STEPS = [
+    { play: 1000,  wait: 15000 },
+    { play: 2000,  wait: 10000 },
+    { play: 3000,  wait: 8000  },
+    { play: 5000,  wait: 6000  },
+    { play: 30000, wait: 0     }, // play rest of preview
+  ]
 
   function setAudioStateBoth(s) {
     setAudioState(s)
     audioStateRef.current = s
+  }
+
+  function clearHintTimers() {
+    hintTimeoutsRef.current.forEach(clearTimeout)
+    hintTimeoutsRef.current = []
+  }
+
+  function scheduleHint(stepIndex) {
+    if (!roundActiveRef.current) return
+    if (stepIndex >= HINT_STEPS.length) return
+
+    const step = HINT_STEPS[stepIndex]
+    setCurrentHint(stepIndex + 1)
+
+    if (audioRef.current) {
+      audioRef.current.currentTime = 0
+      audioRef.current.play().catch(() => {})
+      setAudioStateBoth('playing_hint')
+    }
+
+    const t1 = setTimeout(() => {
+      if (!roundActiveRef.current) return
+      if (audioRef.current) audioRef.current.pause()
+      setAudioStateBoth('paused')
+
+      if (step.wait > 0) {
+        const t2 = setTimeout(() => scheduleHint(stepIndex + 1), step.wait)
+        hintTimeoutsRef.current.push(t2)
+      }
+    }, step.play)
+    hintTimeoutsRef.current.push(t1)
   }
 
   // Socket listeners
@@ -118,24 +159,20 @@ export default function Host() {
       setRoundData(data)
       setPhase('playing')
       answeredRef.current = 0
+      totalPlayersRef.current = players.length
       setAnswerProgress({ answeredCount: 0, totalPlayers: players.length })
       setTimer(data.timeLimit)
-      setAudioStateBoth('preview')
-      clearTimeout(hintTimerRef.current)
+      setCurrentHint(0)
+      roundActiveRef.current = true
+      clearHintTimers()
 
       if (audioRef.current) {
         audioRef.current.src = data.audioUrl
         audioRef.current.currentTime = 0
-        audioRef.current.play().catch(() => {})
       }
-      // After 1 second — pause for suspense
-      clearTimeout(previewTimerRef.current)
-      previewTimerRef.current = setTimeout(() => {
-        if (audioRef.current && !audioRef.current.paused) {
-          audioRef.current.pause()
-          setAudioStateBoth('paused')
-        }
-      }, 1000)
+
+      // Start progressive hints
+      scheduleHint(0)
 
       clearInterval(timerRef.current)
       let t = data.timeLimit
@@ -144,32 +181,27 @@ export default function Host() {
 
     socket.on('answerProgress', ({ answeredCount, totalPlayers }) => {
       answeredRef.current = answeredCount
+      totalPlayersRef.current = totalPlayers
       setAnswerProgress({ answeredCount, totalPlayers })
+      // If everyone answered, play full song immediately
+      if (answeredCount >= totalPlayers && totalPlayers > 0) {
+        clearHintTimers()
+        if (audioRef.current) {
+          audioRef.current.currentTime = 0
+          audioRef.current.play().catch(() => {})
+          setAudioStateBoth('playing_full')
+        }
+      }
     })
 
     socket.on('roundEnded', (data) => {
       clearInterval(timerRef.current)
-      clearTimeout(previewTimerRef.current)
+      roundActiveRef.current = false
+      clearHintTimers()
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }
+      setAudioStateBoth('idle')
       setRoundEndData(data)
-
-      const answered = answeredRef.current
-      if (answered < 2 && audioRef.current) {
-        // פחות מ-2 ענו → השמע 3 שניות רמז מהתחלה
-        audioRef.current.currentTime = 0
-        audioRef.current.play().catch(() => {})
-        setAudioStateBoth('hint3')
-        setPhase('hint3')
-        hintTimerRef.current = setTimeout(() => {
-          if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }
-          setAudioStateBoth('idle')
-          setPhase('roundEnd')
-        }, 3000)
-      } else {
-        // 2+ ענו → השיר המלא כבר מתנגן, פשוט עבור לסיום
-        if (audioRef.current) { audioRef.current.pause(); audioRef.current.currentTime = 0 }
-        setAudioStateBoth('idle')
-        setPhase('roundEnd')
-      }
+      setPhase('roundEnd')
     })
 
     socket.on('gameOver', ({ finalScores }) => { setFinalScores(finalScores); setPhase('gameOver') })
@@ -177,20 +209,11 @@ export default function Host() {
     return () => {
       socket.off('gameCreated'); socket.off('playerList'); socket.off('gameStarted')
       socket.off('roundStarted'); socket.off('answerProgress'); socket.off('roundEnded'); socket.off('gameOver')
-      clearInterval(timerRef.current); clearTimeout(previewTimerRef.current); clearTimeout(hintTimerRef.current)
+      clearInterval(timerRef.current)
+      roundActiveRef.current = false
+      clearHintTimers()
     }
   }, [players.length])
-
-  // כש-2+ ענו → הפעל שיר מלא
-  useEffect(() => {
-    if (phase !== 'playing' || audioState !== 'paused') return
-    const { answeredCount } = answerProgress
-    if (answeredCount >= 2 && audioRef.current?.paused) {
-      audioRef.current.currentTime = 0   // מתחיל מהתחלה
-      audioRef.current.play().catch(() => {})
-      setAudioStateBoth('playing_full')
-    }
-  }, [answerProgress.answeredCount, phase, audioState])
 
   // ---- SEARCH ----
   async function doSearch() {
@@ -436,22 +459,20 @@ export default function Host() {
           <div className="song-info">
             <div className="song-number">שיר {roundData.songIndex + 1} מתוך {roundData.totalSongs}</div>
             <div className="now-playing">
-              {audioState === 'preview' && (
+              {audioState === 'playing_hint' && (
                 <><div className="music-wave"><span /><span /><span /><span /><span /></div>
-                <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>🎵 שנייה אחת...</span></>
+                <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#e74c3c' }}>
+                  🎵 רמז {currentHint}
+                </span></>
               )}
               {audioState === 'paused' && (
                 <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#f39c12' }}>
-                  ⏸ מנחשים... ({answered}/{total} ענו)
+                  ⏸ רמז {currentHint} — מנחשים... ({answered}/{total} ענו)
                 </span>
               )}
               {audioState === 'playing_full' && (
                 <><div className="music-wave"><span /><span /><span /><span /><span /></div>
-                <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#27ae60' }}>🎵 שיר מלא מתנגן!</span></>
-              )}
-              {audioState === 'hint3' && (
-                <><div className="music-wave"><span /><span /><span /><span /><span /></div>
-                <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#e74c3c' }}>🎵 רמז — 3 שניות!</span></>
+                <span style={{ fontWeight: 700, fontSize: '1.1rem', color: '#27ae60' }}>🎵 כולם ענו — שיר מלא!</span></>
               )}
             </div>
           </div>
@@ -461,11 +482,7 @@ export default function Host() {
               <div className="timer-bar" style={{ width: `${timerPct}%`, background: timerColor }} />
             </div>
           </div>
-          <p className="progress-info">
-            {audioState === 'paused'
-              ? `⏳ 2 תשובות = שיר מלא | פחות מ-2 = 3 שניות רמז (${answered}/${total})`
-              : `ענו: ${answered} / ${total}`}
-          </p>
+          <p className="progress-info">ענו: {answered} / {total}</p>
           <div className="answer-grid" style={{ margin: '0 auto', maxWidth: 600 }}>
             {roundData.options.map((opt, i) => (
               <div key={i} className={`answer-btn answer-btn-${i}`} style={{ cursor: 'default' }}>

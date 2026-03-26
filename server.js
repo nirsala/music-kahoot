@@ -108,14 +108,34 @@ const GENRE_CHART = {
 }
 
 app.get('/api/auto-select', async (req, res) => {
-  const { genre, language, decade, count = 10 } = req.query
+  const { genre, language, decade, artist, count = 10 } = req.query
   const n = parseInt(count)
 
   try {
     let tracks = []
 
-    // Language / decade → use Deezer playlist search (preserves era authenticity)
-    if ((language && language !== 'any') || decade) {
+    if (artist?.trim()) {
+      // Artist-specific search — try multiple strategies to find the most tracks
+      const name = artist.trim()
+      const isHebrew = /[\u0590-\u05FF]/.test(name)
+      const queries = isHebrew
+        ? [name, `${name} שיר`]
+        : [`artist:"${name}"`, name]
+
+      for (const q of queries) {
+        const r = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=100`)
+        const data = await r.json()
+        const found = (data.data || []).filter(t => t.preview)
+        // Merge, deduplicate
+        const ids = new Set(tracks.map(t => t.id))
+        tracks.push(...found.filter(t => !ids.has(t.id)))
+        if (tracks.length >= n * 2) break
+      }
+      // Sort by popularity
+      tracks.sort((a, b) => (b.rank || 0) - (a.rank || 0))
+
+    } else if ((language && language !== 'any') || decade) {
+      // Language / decade → playlist search
       const decadeQueries = {
         '80s': 'greatest hits 80s', '90s': 'greatest hits 90s',
         '00s': 'best of 2000s', '10s': 'best of 2010s', '20s': 'top hits 2020s'
@@ -129,40 +149,34 @@ app.get('/api/auto-select', async (req, res) => {
         (language && language !== 'any') ? langQueries[language] : ''
       ].filter(Boolean).join(' ')
 
-      // Search for a playlist matching the query, then get its tracks
       const plRes = await fetch(`https://api.deezer.com/search/playlist?q=${encodeURIComponent(q)}&limit=5`)
       const plData = await plRes.json()
       const playlist = plData.data?.[0]
-
       if (playlist) {
         const trRes = await fetch(`https://api.deezer.com/playlist/${playlist.id}/tracks?limit=100`)
         const trData = await trRes.json()
         tracks = (trData.data || []).filter(t => t.preview)
-        // For decades, keep playlist order (curated) — don't sort by current rank
       }
-
-      // Fallback to search if no playlist found
       if (tracks.length === 0) {
         const r = await fetch(`https://api.deezer.com/search?q=${encodeURIComponent(q)}&limit=100`)
         const data = await r.json()
         tracks = (data.data || []).filter(t => t.preview)
       }
     } else {
-      // Use Deezer chart — genre-specific if selected, global otherwise
+      // Chart — genre-specific or global
       const chartId = (genre && genre !== 'any') ? (GENRE_CHART[genre] || 0) : 0
       const r = await fetch(`https://api.deezer.com/chart/${chartId}/tracks?limit=100`)
       const data = await r.json()
       tracks = (data.data || []).filter(t => t.preview)
     }
 
-    if (tracks.length === 0) return res.status(404).json({ error: 'לא נמצאו שירים.' })
-    // Filter out cover/tribute/compilation artists
-    const coverKeywords = /greatest hits|top 40|karaoke|tribute|cover|station|variété|super hits|80s hits guys|90s hits|hits station/i
-    const realTracks = tracks.filter(t => !coverKeywords.test(t.artist?.name || t.artists || ''))
-    const finalTracks = realTracks.length >= n ? realTracks : tracks // fallback if too many filtered
-    // Keep natural order (chart is already sorted by popularity, playlists are curated)
+    if (tracks.length === 0) return res.status(404).json({ error: 'לא נמצאו שירים. נסה שם אחר.' })
+    const coverKeywords = /karaoke|tribute|cover version|made famous|originally performed/i
+    const realTracks = tracks.filter(t => !coverKeywords.test(t.artist?.name || ''))
+    const finalTracks = realTracks.length >= n ? realTracks : tracks
     res.json({ tracks: formatTracks(finalTracks.slice(0, n)) })
-  } catch {
+  } catch (e) {
+    console.error('auto-select error:', e)
     res.status(500).json({ error: 'שגיאת חיפוש' })
   }
 })
@@ -255,8 +269,8 @@ io.on('connection', (socket) => {
 
     const song = game.songs[game.currentSongIndex]
     const timeElapsed = Date.now() - game.roundStartTime
-    const TIME_LIMIT = 30000
-    const isCorrect = answer === song.correctAnswer
+    const TIME_LIMIT = 60000
+    const isCorrect = answer?.trim() === song.correctAnswer?.trim()
     console.log(`📝 ${player.nickname}: answer="${answer}" correct="${song.correctAnswer}" match=${isCorrect}`)
 
     player.answered = true
@@ -329,10 +343,10 @@ function startRound(gameCode) {
     totalSongs: game.songs.length,
     options: song.options,
     audioUrl: song.audioUrl,
-    timeLimit: 30
+    timeLimit: 60
   })
 
-  game.roundTimer = setTimeout(() => endRound(gameCode), 31000)
+  game.roundTimer = setTimeout(() => endRound(gameCode), 65000)
 }
 
 function endRound(gameCode) {

@@ -24,6 +24,7 @@ export default function Player() {
   const timerRef = useRef(null)
   const myNickname = useRef('')
   const wakeLockRef = useRef(null)
+  const hasJoinedRef = useRef(false)
 
   // Keep screen awake on mobile
   useEffect(() => {
@@ -44,8 +45,21 @@ export default function Player() {
   }, [])
 
   useEffect(() => {
-    socket.on('joinSuccess', ({ nickname }) => {
+    // Reconnect: re-join the game automatically when socket reconnects
+    socket.on('connect', () => {
+      if (hasJoinedRef.current) {
+        const gc = sessionStorage.getItem('mkGameCode')
+        const nn = sessionStorage.getItem('mkNickname')
+        if (gc && nn) socket.emit('joinGame', { gameCode: gc, nickname: nn })
+      }
+    })
+
+    socket.on('joinSuccess', ({ nickname, gameCode: gc }) => {
       myNickname.current = nickname
+      hasJoinedRef.current = true
+      sessionStorage.setItem('mkGameCode', gc)
+      sessionStorage.setItem('mkNickname', nickname)
+      setGameCode(gc)
       setPhase('lobby')
     })
 
@@ -98,6 +112,7 @@ export default function Player() {
     })
 
     return () => {
+      socket.off('connect')
       socket.off('joinSuccess')
       socket.off('joinError')
       socket.off('playerList')

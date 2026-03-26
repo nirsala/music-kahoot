@@ -233,18 +233,37 @@ io.on('connection', (socket) => {
   socket.on('joinGame', ({ gameCode, nickname }) => {
     const game = games[gameCode]
     if (!game) return socket.emit('joinError', { message: 'קוד משחק לא נמצא' })
+
+    const trimmed = nickname?.trim()
+    // Reconnection: player already exists by nickname
+    const existing = Object.values(game.players).find(p => p.nickname === trimmed)
+    if (existing) {
+      delete game.players[existing.id]
+      existing.id = socket.id
+      game.players[socket.id] = existing
+      socket.join(gameCode)
+      socket.emit('joinSuccess', { nickname: trimmed, gameCode })
+      broadcastPlayerList(gameCode)
+      // Restore current round state if game is in progress
+      if (game.status === 'playing' && game.currentRoundData) {
+        socket.emit('gameStarted')
+        socket.emit('roundStarted', game.currentRoundData)
+      }
+      return
+    }
+
     if (game.status !== 'waiting') return socket.emit('joinError', { message: 'המשחק כבר התחיל' })
-    if (Object.values(game.players).some(p => p.nickname === nickname.trim()))
+    if (Object.values(game.players).some(p => p.nickname === trimmed))
       return socket.emit('joinError', { message: 'הכינוי כבר תפוס' })
 
     game.players[socket.id] = {
       id: socket.id,
-      nickname: nickname.trim(),
+      nickname: trimmed,
       score: 0,
       answered: false
     }
     socket.join(gameCode)
-    socket.emit('joinSuccess', { nickname: nickname.trim(), gameCode })
+    socket.emit('joinSuccess', { nickname: trimmed, gameCode })
     broadcastPlayerList(gameCode)
   })
 
@@ -388,13 +407,15 @@ function startRound(gameCode) {
   options.filter(o => o !== song.correctAnswer).forEach(o => game.usedDistractors.add(o))
   console.log(`▶ Round ${game.currentSongIndex + 1}: correct="${song.correctAnswer}" options=${JSON.stringify(options)}`)
 
-  io.to(gameCode).emit('roundStarted', {
+  game.currentRoundData = {
     songIndex: game.currentSongIndex,
     totalSongs: game.songs.length,
     options,
     audioUrl: song.audioUrl,
     timeLimit: 60
-  })
+  }
+
+  io.to(gameCode).emit('roundStarted', game.currentRoundData)
 
   game.roundTimer = setTimeout(() => endRound(gameCode), 65000)
 }

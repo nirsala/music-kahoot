@@ -273,10 +273,10 @@ export default function Host() {
     clearHintTimers()
     scheduleHint(currentHintStepRef.current + 1)
   }
-  function goToPrevHint() {
+  function replayCurrentHint() {
     if (!roundActiveRef.current) return
     clearHintTimers()
-    scheduleHint(Math.max(0, currentHintStepRef.current - 1))
+    scheduleHint(currentHintStepRef.current)
   }
   function nextRound() { socket.emit('nextRound', { gameCode }) }
 
@@ -504,9 +504,9 @@ export default function Host() {
           </div>
           {phase === 'playing' && (
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button className="btn btn-gray" style={{ maxWidth: 180 }} onClick={goToPrevHint}
-                disabled={audioState === 'playing_hint' || audioState === 'playing_full' || currentHint <= 1}>
-                ⏮ רמז קודם
+              <button className="btn btn-gray" style={{ maxWidth: 180 }} onClick={replayCurrentHint}
+                disabled={audioState === 'playing_hint' || audioState === 'playing_full'}>
+                🔁 חזור על הרמז
               </button>
               <button className="btn btn-orange" style={{ maxWidth: 180 }} onClick={skipToNextHint}
                 disabled={audioState === 'playing_hint' || audioState === 'playing_full'}>

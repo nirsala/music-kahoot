@@ -93,6 +93,7 @@ export default function Host() {
   const answeredRef = useRef(0)
   const totalPlayersRef = useRef(0)
   const [currentHint, setCurrentHint] = useState(0)
+  const currentHintStepRef = useRef(0)
 
   // hint schedule: { play ms, wait ms after }
   const HINT_STEPS = [
@@ -118,6 +119,7 @@ export default function Host() {
     if (stepIndex >= HINT_STEPS.length) return
 
     const step = HINT_STEPS[stepIndex]
+    currentHintStepRef.current = stepIndex
     setCurrentHint(stepIndex + 1)
 
     if (audioRef.current) {
@@ -269,8 +271,12 @@ export default function Host() {
   function skipToNextHint() {
     if (!roundActiveRef.current) return
     clearHintTimers()
-    const next = currentHint // currentHint is 1-based, scheduleHint is 0-based
-    scheduleHint(next) // skip directly to next step
+    scheduleHint(currentHintStepRef.current + 1)
+  }
+  function goToPrevHint() {
+    if (!roundActiveRef.current) return
+    clearHintTimers()
+    scheduleHint(Math.max(0, currentHintStepRef.current - 1))
   }
   function nextRound() { socket.emit('nextRound', { gameCode }) }
 
@@ -497,12 +503,16 @@ export default function Host() {
             ))}
           </div>
           {phase === 'playing' && (
-            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-              <button className="btn btn-orange" style={{ maxWidth: 220 }} onClick={skipToNextHint}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <button className="btn btn-gray" style={{ maxWidth: 180 }} onClick={goToPrevHint}
+                disabled={audioState === 'playing_hint' || audioState === 'playing_full' || currentHint <= 1}>
+                ⏮ רמז קודם
+              </button>
+              <button className="btn btn-orange" style={{ maxWidth: 180 }} onClick={skipToNextHint}
                 disabled={audioState === 'playing_hint' || audioState === 'playing_full'}>
                 ⏭ רמז הבא
               </button>
-              <button className="btn btn-red" style={{ maxWidth: 220 }} onClick={endRoundNow}>⏹ סיים סיבוב</button>
+              <button className="btn btn-red" style={{ maxWidth: 180 }} onClick={endRoundNow}>⏹ סיים סיבוב</button>
             </div>
           )}
         </div>

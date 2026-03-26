@@ -222,7 +222,8 @@ io.on('connection', (socket) => {
       currentSongIndex: -1,
       songs: songs?.length > 0 ? songs : [...SONGS],
       roundStartTime: null,
-      roundTimer: null
+      roundTimer: null,
+      usedDistractors: new Set()
     }
     socket.join(gameCode)
     socket.emit('gameCreated', { gameCode })
@@ -330,20 +331,46 @@ io.on('connection', (socket) => {
   })
 })
 
-const OPTION_FALLBACKS = [
+const HEBREW_FALLBACKS = [
+  'עומר אדם - תן לי', 'אייל גולן - תן לי להאמין', 'נועה קירל - אני כאן',
+  'שלמה ארצי - עוד יום יעבור', 'רן דנקר - מחר', 'מוסיקה ישראלית - להיט',
+  'אסף אבידן - גשם', 'ירדן בן זקן - חלום', 'כוורת - לו יהי',
+  'נטע ברזילי - toy', 'עידן רייכל - woman', 'יהודה פוליקר - אפר ואבק',
+  'משינה - אכפת לי ממך', 'שירי מימון - אהבה שכזאת', 'דן - ספינת המדבר'
+]
+const ENGLISH_FALLBACKS = [
   'Michael Jackson - Thriller', 'Madonna - Like a Prayer',
   'Adele - Rolling in the Deep', 'Ed Sheeran - Shape of You',
   'Beyoncé - Halo', 'Taylor Swift - Shake It Off',
   'Bruno Mars - Uptown Funk', 'Dua Lipa - Levitating',
-  'The Weeknd - Blinding Lights', 'Coldplay - Yellow'
+  'The Weeknd - Blinding Lights', 'Coldplay - Yellow',
+  'Rihanna - Diamonds', 'Justin Timberlake - Mirrors',
+  'Eminem - Lose Yourself', 'Katy Perry - Firework',
+  'Lady Gaga - Bad Romance', 'Post Malone - Circles'
 ]
 
-function buildOptions(song, allSongs) {
+function isHebrew(text) { return /[\u0590-\u05FF]/.test(text || '') }
+
+function buildOptions(song, allSongs, usedDistractors) {
   const correct = song.correctAnswer
+  const correctIsHebrew = isHebrew(correct)
+  const fallbacks = correctIsHebrew ? HEBREW_FALLBACKS : ENGLISH_FALLBACKS
+
+  // Prefer same-language game songs not yet used as distractors
+  const gameSongs = allSongs
+    .map(s => s.correctAnswer)
+    .filter(a => a && a !== correct && isHebrew(a) === correctIsHebrew && !usedDistractors.has(a))
+
+  // Then same-language fallbacks not yet used
+  const freshFallbacks = fallbacks.filter(f => f !== correct && !usedDistractors.has(f))
+
+  // Build pool: fresh same-language first, then all same-language (allowing reuse if needed)
   const pool = [
-    ...allSongs.map(s => s.correctAnswer).filter(a => a && a !== correct),
-    ...OPTION_FALLBACKS.filter(f => f !== correct)
+    ...gameSongs,
+    ...freshFallbacks,
+    ...fallbacks.filter(f => f !== correct && !gameSongs.includes(f)) // allow reuse if pool too small
   ]
+
   const distractors = pool.sort(() => Math.random() - 0.5).slice(0, 3)
   return [correct, ...distractors].sort(() => Math.random() - 0.5)
 }
@@ -356,7 +383,9 @@ function startRound(gameCode) {
   game.roundStartTime = Date.now()
 
   const song = game.songs[game.currentSongIndex]
-  const options = buildOptions(song, game.songs)
+  const options = buildOptions(song, game.songs, game.usedDistractors)
+  // Mark distractors as used so they don't repeat in future rounds
+  options.filter(o => o !== song.correctAnswer).forEach(o => game.usedDistractors.add(o))
   console.log(`▶ Round ${game.currentSongIndex + 1}: correct="${song.correctAnswer}" options=${JSON.stringify(options)}`)
 
   io.to(gameCode).emit('roundStarted', {

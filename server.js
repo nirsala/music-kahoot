@@ -174,7 +174,8 @@ app.get('/api/auto-select', async (req, res) => {
     const coverKeywords = /karaoke|tribute|cover version|made famous|originally performed/i
     const realTracks = tracks.filter(t => !coverKeywords.test(t.artist?.name || ''))
     const finalTracks = realTracks.length >= n ? realTracks : tracks
-    res.json({ tracks: formatTracks(finalTracks.slice(0, n)) })
+    const shuffled = finalTracks.sort(() => Math.random() - 0.5)
+    res.json({ tracks: formatTracks(shuffled.slice(0, n)) })
   } catch (e) {
     console.error('auto-select error:', e)
     res.status(500).json({ error: 'שגיאת חיפוש' })

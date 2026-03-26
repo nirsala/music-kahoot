@@ -47,7 +47,7 @@ function buildGameSongs(playlist, searchPool = []) {
       ...playlistLabels.filter((_, j) => j !== i),
       ...poolLabels
     ].filter(l => l !== correct))
-    return { audioUrl: track.previewUrl, correctAnswer: correct, options: shuffle([correct, ...distractors.slice(0, 3)]) }
+    return { audioUrl: track.previewUrl, correctAnswer: correct, lang: track.lang, options: shuffle([correct, ...distractors.slice(0, 3)]) }
   })
 }
 

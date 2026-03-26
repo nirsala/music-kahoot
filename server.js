@@ -90,7 +90,7 @@ app.get('/api/spotify/search', async (req, res) => {
 // ------------------------------------
 
 // ---- AUTO-SELECT ----
-function formatTracks(tracks) {
+function formatTracks(tracks, lang) {
   return tracks.map((t, i) => ({
     id: String(t.id),
     name: t.title,
@@ -98,7 +98,8 @@ function formatTracks(tracks) {
     albumArt: t.album.cover_medium,
     previewUrl: t.preview,
     rank: t.rank || 0,
-    position: t.position || (i + 1)
+    position: t.position || (i + 1),
+    lang: lang || (isHebrew(`${t.artist?.name} ${t.title}`) ? 'he' : undefined)
   }))
 }
 
@@ -175,7 +176,9 @@ app.get('/api/auto-select', async (req, res) => {
     const realTracks = tracks.filter(t => !coverKeywords.test(t.artist?.name || ''))
     const finalTracks = realTracks.length >= n ? realTracks : tracks
     const shuffled = finalTracks.sort(() => Math.random() - 0.5)
-    res.json({ tracks: formatTracks(shuffled.slice(0, n)) })
+    // Determine language tag: explicit Hebrew filter, or Hebrew artist name
+    const forceLang = (language === 'hebrew' || (artist && isHebrew(artist.trim()))) ? 'he' : undefined
+    res.json({ tracks: formatTracks(shuffled.slice(0, n), forceLang) })
   } catch (e) {
     console.error('auto-select error:', e)
     res.status(500).json({ error: 'שגיאת חיפוש' })
@@ -380,7 +383,7 @@ function isHebrew(text) { return /[\u0590-\u05FF]/.test(text || '') }
 
 function buildOptions(song, allSongs, usedDistractors) {
   const correct = song.correctAnswer
-  const correctIsHebrew = isHebrew(correct)
+  const correctIsHebrew = song.lang === 'he' || isHebrew(correct)
   const fallbacks = correctIsHebrew ? HEBREW_FALLBACKS : ENGLISH_FALLBACKS
 
   // Prefer same-language game songs not yet used as distractors

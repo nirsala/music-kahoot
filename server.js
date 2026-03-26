@@ -387,9 +387,15 @@ function buildOptions(song, allSongs, usedDistractors) {
   const fallbacks = correctIsHebrew ? HEBREW_FALLBACKS : ENGLISH_FALLBACKS
 
   // Prefer same-language game songs not yet used as distractors
+  // Use song.lang tag first, fall back to text detection
   const gameSongs = allSongs
+    .filter(s => {
+      if (!s.correctAnswer || s.correctAnswer === correct) return false
+      if (usedDistractors.has(s.correctAnswer)) return false
+      const songIsHebrew = s.lang === 'he' || isHebrew(s.correctAnswer)
+      return songIsHebrew === correctIsHebrew
+    })
     .map(s => s.correctAnswer)
-    .filter(a => a && a !== correct && isHebrew(a) === correctIsHebrew && !usedDistractors.has(a))
 
   // Then same-language fallbacks not yet used
   const freshFallbacks = fallbacks.filter(f => f !== correct && !usedDistractors.has(f))

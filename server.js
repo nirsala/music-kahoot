@@ -330,6 +330,24 @@ io.on('connection', (socket) => {
   })
 })
 
+const OPTION_FALLBACKS = [
+  'Michael Jackson - Thriller', 'Madonna - Like a Prayer',
+  'Adele - Rolling in the Deep', 'Ed Sheeran - Shape of You',
+  'Beyoncé - Halo', 'Taylor Swift - Shake It Off',
+  'Bruno Mars - Uptown Funk', 'Dua Lipa - Levitating',
+  'The Weeknd - Blinding Lights', 'Coldplay - Yellow'
+]
+
+function buildOptions(song, allSongs) {
+  const correct = song.correctAnswer
+  const pool = [
+    ...allSongs.map(s => s.correctAnswer).filter(a => a && a !== correct),
+    ...OPTION_FALLBACKS.filter(f => f !== correct)
+  ]
+  const distractors = pool.sort(() => Math.random() - 0.5).slice(0, 3)
+  return [correct, ...distractors].sort(() => Math.random() - 0.5)
+}
+
 function startRound(gameCode) {
   const game = games[gameCode]
   if (!game) return
@@ -338,10 +356,13 @@ function startRound(gameCode) {
   game.roundStartTime = Date.now()
 
   const song = game.songs[game.currentSongIndex]
+  const options = buildOptions(song, game.songs)
+  console.log(`▶ Round ${game.currentSongIndex + 1}: correct="${song.correctAnswer}" options=${JSON.stringify(options)}`)
+
   io.to(gameCode).emit('roundStarted', {
     songIndex: game.currentSongIndex,
     totalSongs: game.songs.length,
-    options: song.options,
+    options,
     audioUrl: song.audioUrl,
     timeLimit: 60
   })

@@ -247,8 +247,14 @@ io.on('connection', (socket) => {
       broadcastPlayerList(gameCode)
       // Restore current round state if game is in progress
       if (game.status === 'playing' && game.currentRoundData) {
+        const elapsed = Math.floor((Date.now() - game.roundStartTime) / 1000)
+        const timeRemaining = Math.max(1, 60 - elapsed)
         socket.emit('gameStarted')
-        socket.emit('roundStarted', game.currentRoundData)
+        socket.emit('roundStarted', { ...game.currentRoundData, timeLimit: timeRemaining })
+        // If player already answered, restore their result
+        if (existing.answered && existing.lastAnswerResult) {
+          socket.emit('answerResult', existing.lastAnswerResult)
+        }
       }
       return
     }
@@ -303,7 +309,8 @@ io.on('connection', (socket) => {
       player.score += points
     }
 
-    socket.emit('answerResult', { isCorrect, points, correctAnswer: song.correctAnswer })
+    player.lastAnswerResult = { isCorrect, points, correctAnswer: song.correctAnswer }
+    socket.emit('answerResult', player.lastAnswerResult)
 
     const answeredCount = Object.values(game.players).filter(p => p.answered).length
     const totalPlayers = Object.values(game.players).length

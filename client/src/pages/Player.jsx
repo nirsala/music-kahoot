@@ -23,6 +23,25 @@ export default function Player() {
   const [myScore, setMyScore] = useState(0)
   const timerRef = useRef(null)
   const myNickname = useRef('')
+  const wakeLockRef = useRef(null)
+
+  // Keep screen awake on mobile
+  useEffect(() => {
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLockRef.current = await navigator.wakeLock.request('screen')
+        }
+      } catch {}
+    }
+    requestWakeLock()
+    const onVisible = () => { if (document.visibilityState === 'visible') requestWakeLock() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      wakeLockRef.current?.release()
+    }
+  }, [])
 
   useEffect(() => {
     socket.on('joinSuccess', ({ nickname }) => {
@@ -282,17 +301,32 @@ export default function Player() {
 
   // ---- ROUND END ----
   if (phase === 'roundEnd' && roundEndData) {
+    const playerWasCorrect = answerResult?.isCorrect
+    const playerAnswered = !!answerResult
     return (
       <div className="screen">
         <div style={{
-          background: '#27ae60',
+          background: playerWasCorrect ? '#27ae60' : '#c0392b',
           borderRadius: 16,
           padding: '16px 32px',
-          fontSize: '1.4rem',
+          fontSize: '1.2rem',
           fontWeight: 900,
           textAlign: 'center'
         }}>
-          ✅ {roundEndData.correctAnswer}
+          {!playerAnswered && '⏱ לא ענית בזמן'}
+          {playerAnswered && playerWasCorrect && '✅ כל הכבוד!'}
+          {playerAnswered && !playerWasCorrect && '❌ טעות!'}
+        </div>
+        <div style={{
+          background: '#1e2a3a',
+          borderRadius: 12,
+          padding: '12px 28px',
+          fontSize: '1.1rem',
+          fontWeight: 700,
+          textAlign: 'center',
+          color: '#f1c40f'
+        }}>
+          🎵 התשובה הנכונה: {roundEndData.correctAnswer}
         </div>
 
         {myRank && (

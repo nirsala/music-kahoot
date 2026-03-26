@@ -108,6 +108,7 @@ h3 {
 
 .btn-green  { background: var(--green); color: #fff; }
 .btn-red    { background: var(--red);   color: #fff; }
+.btn-orange { background: #e67e22;      color: #fff; }
 .btn-gray   { background: #2c3e50;       color: #fff; }
 
 /* ---- HOME PAGE ---- */

@@ -266,6 +266,12 @@ export default function Host() {
   function createGameDemo() { socket.emit('createGame', { songs: [] }) }
   function startGame() { socket.emit('startGame', { gameCode }) }
   function endRoundNow() { socket.emit('endRound', { gameCode }) }
+  function skipToNextHint() {
+    if (!roundActiveRef.current) return
+    clearHintTimers()
+    const next = currentHint // currentHint is 1-based, scheduleHint is 0-based
+    scheduleHint(next) // skip directly to next step
+  }
   function nextRound() { socket.emit('nextRound', { gameCode }) }
 
   const timerPct = roundData ? (timer / roundData.timeLimit) * 100 : 100
@@ -491,8 +497,12 @@ export default function Host() {
             ))}
           </div>
           {phase === 'playing' && (
-            <div style={{ textAlign: 'center' }}>
-              <button className="btn btn-red" style={{ maxWidth: 300, margin: '0 auto' }} onClick={endRoundNow}>⏹ סיים סיבוב</button>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+              <button className="btn btn-orange" style={{ maxWidth: 220 }} onClick={skipToNextHint}
+                disabled={audioState === 'playing_hint' || audioState === 'playing_full'}>
+                ⏭ רמז הבא
+              </button>
+              <button className="btn btn-red" style={{ maxWidth: 220 }} onClick={endRoundNow}>⏹ סיים סיבוב</button>
             </div>
           )}
         </div>
